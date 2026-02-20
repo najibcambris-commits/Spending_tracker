@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Expense Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        .expense-scroll { max-height: 280px; overflow-y: auto; }
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-slate-100 p-4 font-sans text-slate-900">
+    <div class="max-w-md mx-auto bg-white p-5 rounded-3xl shadow-2xl border border-slate-200">
+        
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h1 class="text-2xl font-black tracking-tight">Monthly Pay</h1>
+                <p id="currentDate" class="text-xs font-bold text-slate-400 uppercase tracking-widest"></p>
+            </div>
+            <button onclick="backupData()" class="bg-slate-100 p-2 rounded-full hover:bg-slate-200 transition-all" title="Backup Data">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+            </button>
+        </div>
+        
+        <div class="bg-blue-600 p-4 rounded-2xl mb-4 flex items-center justify-between text-white shadow-lg shadow-blue-200">
+            <div class="text-[10px] font-black uppercase leading-none opacity-80">Market Rate</div>
+            <div class="flex items-center gap-2">
+                <span class="font-bold">$1 =</span>
+                <input type="number" id="rate" value="89500" class="w-24 bg-blue-500 text-white font-black text-center rounded-lg py-1 border border-blue-400 focus:outline-none focus:ring-2 focus:ring-white" onchange="render()">
+                <span class="font-bold text-xs">LBP</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <div class="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                <p class="text-[9px] text-slate-400 uppercase font-black mb-1">Last Month</p>
+                <p id="prevTotal" class="text-lg font-bold text-slate-400">$0.00</p>
+            </div>
+            <div class="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                <p class="text-[9px] text-emerald-600 uppercase font-black mb-1">Current</p>
+                <p id="currTotal" class="text-lg font-bold text-emerald-700">$0.00</p>
+            </div>
+        </div>
+
+        <div class="space-y-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+            <input type="text" id="item" placeholder="What did you buy?" class="w-full p-3 rounded-xl border-none shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            <div class="flex gap-2">
+                <input type="number" id="cost" placeholder="Amount" class="w-full p-3 rounded-xl border-none shadow-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                <select id="currency" class="p-3 rounded-xl border-none bg-white shadow-sm font-bold text-slate-600">
+                    <option value="USD">USD</option>
+                    <option value="LBP">LBP</option>
+                </select>
+            </div>
+            <button onclick="addExpense()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg">Add Expense</button>
+        </div>
+
+        <div class="mb-4">
+            <div class="flex text-[10px] uppercase font-black text-slate-300 px-2 mb-2">
+                <div class="flex-1">Item</div>
+                <div class="w-20 text-right">Original</div>
+                <div class="w-20 text-right">USD Equiv.</div>
+                <div class="w-8"></div>
+            </div>
+            <div id="expenseList" class="expense-scroll space-y-2 pr-1">
+                </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mt-6">
+            <button onclick="generatePDF()" class="bg-blue-100 text-blue-700 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-200 transition-all">
+                PDF Report
+            </button>
+            <button onclick="closeMonth()" class="bg-rose-100 text-rose-600 py-3 rounded-xl font-black text-xs uppercase hover:bg-rose-200 transition-all">
+                Close Month
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+        let expenses = JSON.parse(localStorage.getItem('expenses')) || [];
+        let prevMonthTotal = localStorage.getItem('prevMonthTotal') || "0.00";
+
+        document.getElementById('currentDate').innerText = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        function addExpense() {
+            const itemInput = document.getElementById('item');
+            const costInput = document.getElementById('cost');
+            const currency = document.getElementById('currency').value;
+            const rate = parseFloat(document.getElementById('rate').value) || 1;
+
+            if (!itemInput.value || !costInput.value) return;
+
+            const cost = parseFloat(costInput.value);
+            const usdValue = currency === 'USD' ? cost : cost / rate;
+            
+            expenses.push({ id: Date.now(), item: itemInput.value, cost, currency, usdValue });
+            
+            saveData();
+            itemInput.value = '';
+            costInput.value = '';
+            render();
+        }
+
+        function deleteItem(id) {
+            expenses = expenses.filter(ex => ex.id !== id);
+            saveData();
+            render();
+        }
+
+        function saveData() {
+            localStorage.setItem('expenses', JSON.stringify(expenses));
+            localStorage.setItem('prevMonthTotal', prevMonthTotal);
+        }
+
+        function closeMonth() {
+            if (expenses.length === 0) return;
+            if (confirm("End of month? Current total will move to 'Last Month' and the list will clear.")) {
+                let totalUSD = expenses.reduce((sum, ex) => sum + ex.usdValue, 0);
+                prevMonthTotal = totalUSD.toFixed(2);
+                expenses = [];
+                saveData();
+                render();
+            }
+        }
+
+        function render() {
+            const list = document.getElementById('expenseList');
+            list.innerHTML = '';
+            let currentTotalUSD = 0;
+
+            expenses.forEach((ex) => {
+                currentTotalUSD += ex.usdValue;
+                list.innerHTML += `
+                    <div class="flex items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm">
+                        <div class="flex-1 font-bold text-slate-700 truncate">${ex.item}</div>
+                        <div class="w-20 text-right text-[10px] font-bold text-slate-400">${ex.cost.toLocaleString()} ${ex.currency}</div>
+                        <div class="w-20 text-right font-black text-blue-600">$${ex.usdValue.toFixed(2)}</div>
+                        <button onclick="deleteItem(${ex.id})" class="w-8 text-right text-rose-300 hover:text-rose-600 font-bold text-lg">×</button>
+                    </div>`;
+            });
+
+            document.getElementById('currTotal').innerText = `$${currentTotalUSD.toFixed(2)}`;
+            document.getElementById('prevTotal').innerText = `$${parseFloat(prevMonthTotal).toFixed(2)}`;
+            
+            if(expenses.length === 0) {
+                list.innerHTML = '<div class="text-center text-slate-300 py-10 text-xs italic font-medium">No expenses yet. Start adding!</div>';
+            }
+        }
+
+        function backupData() {
+            const data = {
+                expenses: expenses,
+                prevMonthTotal: prevMonthTotal,
+                exportDate: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `backup_${new Date().toLocaleDateString()}.txt`;
+            a.click();
+        }
+
+        function generatePDF() {
+            const doc = new jsPDF();
+            const rate = document.getElementById('rate').value;
+            const totalUSD = document.getElementById('currTotal').innerText;
+            
+            doc.setFontSize(22);
+            doc.text("Expense Report", 15, 20);
+            doc.setFontSize(10);
+            doc.text(`Market Rate: 1 USD = ${rate} LBP`, 15, 28);
+            
+            let y = 45;
+            doc.setFont(undefined, 'bold');
+            doc.text("Description", 15, y);
+            doc.text("Amount", 120, y);
+            doc.text("USD", 170, y);
+            doc.line(15, y+2, 195, y+2);
+
+            doc.setFont(undefined, 'normal');
+            y += 10;
+            expenses.forEach(ex => {
+                doc.text(ex.item, 15, y);
+                doc.text(`${ex.cost.toLocaleString()} ${ex.currency}`, 120, y);
+                doc.text(`$${ex.usdValue.toFixed(2)}`, 170, y);
+                y += 8;
+                if(y > 270) { doc.addPage(); y = 20; }
+            });
+
+            doc.setFont(undefined, 'bold');
+            doc.text(`TOTAL SPENT: ${totalUSD}`, 130, y + 10);
+            doc.save(`Expenses_${new Date().toLocaleDateString()}.pdf`);
+        }
+
+        render();
+    </script>
+</body>
+</html>
